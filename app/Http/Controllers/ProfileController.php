@@ -42,6 +42,13 @@ class ProfileController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        // 🔒 BLOQUEIO: ADMIN não pode apagar a própria conta
+        if ($request->user()->papel === 'ADMIN') {
+            return Redirect::route('profile.edit')->withErrors([
+                'userDeletion' => 'Administradores não podem apagar a própria conta.',
+            ]);
+        }
+
         $request->validateWithBag('userDeletion', [
             'password' => ['required', 'current_password'],
         ]);
