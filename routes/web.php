@@ -1,6 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
+
 use App\Http\Controllers\DoencaController;
 use App\Http\Controllers\UnidadeSaudeController;
 use App\Http\Controllers\CasoController;
@@ -8,11 +11,30 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\DashboardController;
 
+use App\Models\Caso;
+use App\Models\Doenca;
+use App\Models\UnidadeSaude;
+use App\Models\AuditoriaAcesso;
+
 Route::get('/', function () {
-    if (auth()->check()) {
+    if (Auth::check()) {
         return redirect()->route('dashboard');
     }
-    return view('welcome');
+
+    // ✅ Dados públicos (agregados, sem PII) + cache 60s
+    $publicData = Cache::remember('welcome_public_data', 60, function () {
+        return [
+            'casos_total' => Caso::count(),
+            'casos_7d' => Caso::where('created_at', '>=', now()->subDays(7))->count(),
+            'doencas_total' => Doenca::count(),
+            'unidades_total' => UnidadeSaude::count(),
+            'ultima_atualizacao' => optional(
+                AuditoriaAcesso::orderByDesc('id')->first()
+            )->created_at,
+        ];
+    });
+
+    return view('welcome', $publicData);
 })->name('home');
 
 Route::middleware(['auth'])->group(function () {
@@ -34,7 +56,6 @@ Route::middleware(['auth'])->group(function () {
 
         // lista + eliminar (com policy)
         Route::resource('users', UserController::class)->only(['index', 'create', 'store', 'destroy']);
-
     });
 });
 

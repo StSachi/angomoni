@@ -115,32 +115,54 @@
                     </div>
                 </div>
 
-                {{-- Painel “Atividade recente” (mock) --}}
-                <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <h2 class="text-base font-semibold text-slate-900">Atividade recente</h2>
-                            <p class="text-sm text-slate-600">Últimas ações e registos.</p>
-                        </div>
+                {{-- Painel “Atividade recente” (real) --}}
+<div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 class="text-base font-semibold text-slate-900">Atividade recente</h2>
+            <p class="text-sm text-slate-600">Últimas ações críticas registadas (auditoria).</p>
+        </div>
 
-                        <span class="text-xs px-3 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-100">
-                            Auditoria ativa
-                        </span>
+        <span class="text-xs px-3 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-100">
+            Auditoria ativa
+        </span>
+    </div>
+
+    <div class="mt-5 divide-y divide-slate-200">
+        @forelse($ultimasAuditorias as $a)
+            <div class="py-4 flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                    <div class="text-sm font-semibold text-slate-900">
+                        {{ $a->acao }}
+                        @if(auth()->user()->papel === 'ADMIN' && $a->user)
+                            <span class="text-slate-500 font-normal">— {{ $a->user->name }}</span>
+                        @endif
                     </div>
 
-                    <div class="mt-5 divide-y divide-slate-200">
-                        {{-- Linha exemplo --}}
-                        <div class="py-4 flex items-start justify-between gap-4">
-                            <div>
-                                <div class="text-sm font-semibold text-slate-900">
-                                    —
-                                </div>
-                                <div class="text-xs text-slate-600 mt-1">
-                                    Aqui vamos mostrar os últimos casos registados (ou logs de auditoria).
-                                </div>
-                            </div>
-                            <div class="text-xs text-slate-500 whitespace-nowrap">—</div>
-                        </div>
+                    <div class="text-xs text-slate-600 mt-1">
+                        {{ $a->descricao }}
+                    </div>
+                </div>
+
+                <div class="text-xs text-slate-500 whitespace-nowrap">
+                    {{ optional($a->created_at)->format('d/m H:i') }}
+                </div>
+            </div>
+        @empty
+            <div class="py-6 text-sm text-slate-500">
+                Ainda não há atividade registada.
+            </div>
+        @endforelse
+    </div>
+
+    <div class="mt-5 flex justify-end">
+        <a href="{{ route('users.index') }}"
+           class="text-sm font-semibold text-teal-700 hover:text-teal-800">
+            Ver utilizadores →
+        </a>
+    </div>
+</div>
+
 
                         <div class="py-4 flex items-start justify-between gap-4">
                             <div>

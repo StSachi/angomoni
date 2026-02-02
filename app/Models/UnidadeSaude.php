@@ -15,5 +15,7 @@ class UnidadeSaude extends Model
         'comuna',
         'bairro',
         'telefone',
+        'provincia',
+        'cidade',
     ];
 }

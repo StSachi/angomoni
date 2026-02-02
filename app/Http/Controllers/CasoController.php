@@ -49,6 +49,20 @@ class CasoController extends Controller
 
         $data['user_id'] = $request->user()->id;
 
+        // ✅ Snapshot de localização (não vem do utilizador)
+        $unidade = UnidadeSaude::findOrFail($data['unidade_saude_id']);
+
+        // Aqui usamos municipio como “cidade” do caso
+        $data['provincia'] = $unidade->provincia;
+        $data['cidade'] = $unidade->municipio;
+
+        // (Recomendado) Bloquear caso a unidade não tenha localização
+        if (empty($data['provincia']) || empty($data['cidade'])) {
+            return back()
+                ->withErrors(['unidade_saude_id' => 'A unidade selecionada não tem província/município definido.'])
+                ->withInput();
+        }
+
         $caso = Caso::create($data);
 
         return redirect()
@@ -89,6 +103,19 @@ class CasoController extends Controller
             'telefone_contacto' => ['nullable', 'string', 'max:30'],
             'observacoes' => ['nullable', 'string'],
         ]);
+
+        // ✅ Se a unidade mudou, atualizar snapshot
+        if ((int)$caso->unidade_saude_id !== (int)$data['unidade_saude_id']) {
+            $unidade = UnidadeSaude::findOrFail($data['unidade_saude_id']);
+            $data['provincia'] = $unidade->provincia;
+            $data['cidade'] = $unidade->municipio;
+
+            if (empty($data['provincia']) || empty($data['cidade'])) {
+                return back()
+                    ->withErrors(['unidade_saude_id' => 'A unidade selecionada não tem província/município definido.'])
+                    ->withInput();
+            }
+        }
 
         $caso->update($data);
 

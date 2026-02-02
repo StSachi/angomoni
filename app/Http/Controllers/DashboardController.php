@@ -7,7 +7,7 @@ use Illuminate\View\View;
 use App\Models\Caso;
 use App\Models\Doenca;
 use App\Models\UnidadeSaude;
-use App\Models\Auditoria;
+use App\Models\AuditoriaAcesso;
 
 class DashboardController extends Controller
 {
@@ -20,17 +20,24 @@ class DashboardController extends Controller
             'doencas_total' => Doenca::count(),
         ];
 
-        // Últimos 10 casos (com relações se existirem)
         $ultimosCasos = Caso::query()
             ->orderByDesc('id')
             ->limit(10)
             ->get();
 
-        // Últimas 10 auditorias
-        $ultimasAuditorias = Auditoria::query()
+        $user = $request->user();
+
+        $audQuery = AuditoriaAcesso::query()
+            ->with('user')
+            ->whereIn('acao', ['LOGIN', 'LOGOUT', 'CREATE', 'UPDATE', 'DELETE'])
             ->orderByDesc('id')
-            ->limit(10)
-            ->get();
+            ->limit(10);
+
+        if ($user->papel !== 'ADMIN') {
+            $audQuery->where('user_id', $user->id);
+        }
+
+        $ultimasAuditorias = $audQuery->get();
 
         return view('dashboard', compact('kpis', 'ultimosCasos', 'ultimasAuditorias'));
     }

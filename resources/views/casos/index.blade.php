@@ -29,6 +29,11 @@
                                class="mt-1 w-full rounded-xl border-slate-200 focus:border-teal-500 focus:ring-teal-500">
                     </div>
 
+                    <td class="px-4 py-3 text-sm text-slate-700">
+                        {{ $caso->cidade ?? '—' }}, {{ $caso->provincia ?? '—' }}
+                    </td>
+
+
                     <div>
                         <label class="block text-xs font-medium text-slate-600">Data início</label>
                         <input type="date" name="inicio" value="{{ request('inicio') }}"
@@ -262,7 +267,7 @@
 
     <script>
         (function () {
-            const data = @json($casosMapa);
+            const data = {!! json_encode($casosMapa) !!};
 
             // Se não tem dados, não inicializa
             if (!data || data.length === 0) return;

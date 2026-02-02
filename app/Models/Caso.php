@@ -18,14 +18,27 @@ class Caso extends Model
         'estado',
         'observacoes',
         'paciente_iniciais',
-        'telefone_contacto',
+        'telefone_contacto',~
+        'provincia',
+        'cidade',
     ];
 
     protected $casts = [
         'data_notificacao' => 'date',
     ];
 
-    public function doenca() { return $this->belongsTo(Doenca::class); }
-    public function unidadeSaude() { return $this->belongsTo(UnidadeSaude::class); }
-    public function user() { return $this->belongsTo(User::class); }
+    public function doenca()
+    {
+        return $this->belongsTo(Doenca::class);
+    }
+
+    public function unidadeSaude()
+    {
+        return $this->belongsTo(UnidadeSaude::class);
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 }

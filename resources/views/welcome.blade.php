@@ -35,6 +35,8 @@
         </div>
     </header>
 
+    
+
     <!-- HERO -->
     <main class="flex-1">
         <div class="max-w-6xl mx-auto px-6 py-16 grid lg:grid-cols-2 gap-12 items-center">
@@ -74,20 +76,22 @@
                     <div class="text-xs text-slate-500">Sistema</div>
                 </div>
 
-                <div class="mt-5 grid grid-cols-3 gap-3">
-                    <div class="rounded-2xl border border-slate-200 p-4">
-                        <div class="text-xs text-slate-500">Casos</div>
-                        <div class="text-2xl font-semibold mt-1">—</div>
-                    </div>
-                    <div class="rounded-2xl border border-slate-200 p-4">
-                        <div class="text-xs text-slate-500">Surtos</div>
-                        <div class="text-2xl font-semibold mt-1">—</div>
-                    </div>
-                    <div class="rounded-2xl border border-slate-200 p-4">
-                        <div class="text-xs text-slate-500">Alertas</div>
-                        <div class="text-2xl font-semibold mt-1">—</div>
-                    </div>
-                </div>
+                <div class="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div class="rounded-2xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">N.º de Casos</div>
+        <div class="mt-2 text-3xl font-semibold text-slate-900">{{ $casos_total ?? 0 }}</div>
+    </div>
+
+    <div class="rounded-2xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">Surtos</div>
+        <div class="mt-2 text-3xl font-semibold text-slate-900">{{ $casos_7d ?? 0 }}</div>
+    </div>
+
+    <div class="rounded-2xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">Alertas</div>
+        <div class="mt-2 text-3xl font-semibold text-slate-900">{{ $alertas ?? 0 }}</div>
+    </div>
+</div>
 
                 <div class="mt-6 rounded-2xl bg-teal-50 p-4 border border-teal-100">
                     <div class="text-sm font-semibold text-teal-900">

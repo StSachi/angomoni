@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\Auditoria;
+use App\Services\ServicoAuditoria;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
@@ -41,9 +41,6 @@ class UserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        // Se tiveres policy para create:
-        // $this->authorize('create', User::class);
-
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
@@ -65,28 +62,18 @@ class UserController extends Controller
             'password' => Hash::make($tempPassword),
         ]);
 
-        Auditoria::create([
-            'user_id' => $request->user()->id,
-            'acao' => 'USER_CREATE',
-            'entidade' => 'User',
-            'entidade_id' => $user->id,
-            'antes' => null,
-            'depois' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'papel' => $user->papel,
-                'ativo' => (bool) $user->ativo,
-            ],
-            'ip' => $request->ip(),
-            'user_agent' => substr((string) $request->userAgent(), 0, 500),
-        ]);
+        ServicoAuditoria::registar(
+            'CREATE',
+            "Criou utilizador: {$user->name} ({$user->email})",
+            $request
+        );
 
         return redirect()
             ->route('users.index')
             ->with('success', 'Utilizador criado com sucesso.')
             ->with('temp_password', $tempPassword);
     }
+
 
     /**
      * Remove the specified resource from storage.
@@ -95,24 +82,17 @@ class UserController extends Controller
     {
         $this->authorize('delete', $user);
 
-        Auditoria::create([
-            'user_id' => $request->user()->id,
-            'acao' => 'USER_DELETE',
-            'entidade' => 'User',
-            'entidade_id' => $user->id,
-            'antes' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'papel' => $user->papel,
-                'ativo' => (bool) $user->ativo,
-            ],
-            'depois' => null,
-            'ip' => $request->ip(),
-            'user_agent' => substr((string) $request->userAgent(), 0, 500),
-        ]);
+        $nome  = $user->name;
+        $email = $user->email;
+        $papel = $user->papel;
 
         $user->delete();
+
+        ServicoAuditoria::registar(
+        'DELETE',
+        "Eliminou utilizador: {$nome} ({$email}) papel={$papel}",
+        $request
+        );
 
         return redirect()
             ->route('users.index')
