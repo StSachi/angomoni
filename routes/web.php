@@ -6,6 +6,7 @@ use App\Http\Controllers\UnidadeSaudeController;
 use App\Http\Controllers\CasoController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\DashboardController;
 
 Route::get('/', function () {
     if (auth()->check()) {
@@ -16,9 +17,7 @@ Route::get('/', function () {
 
 Route::middleware(['auth'])->group(function () {
 
-    Route::get('/dashboard', function () {
-        return view('dashboard');
-    })->name('dashboard');
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Breeze Profile routes (necessárias)
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -34,7 +33,8 @@ Route::middleware(['auth'])->group(function () {
         Route::resource('unidades-saude', UnidadeSaudeController::class);
 
         // lista + eliminar (com policy)
-        Route::resource('users', UserController::class)->only(['index', 'destroy']);
+        Route::resource('users', UserController::class)->only(['index', 'create', 'store', 'destroy']);
+
     });
 });
 

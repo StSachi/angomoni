@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
@@ -21,6 +23,69 @@ class UserController extends Controller
         $users = User::orderByDesc('id')->paginate(20);
 
         return view('users.index', compact('users'));
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     */
+    public function create(): View
+    {
+        // Se tiveres policy para create:
+        // $this->authorize('create', User::class);
+
+        return view('users.create');
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        // Se tiveres policy para create:
+        // $this->authorize('create', User::class);
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
+            'papel' => ['required', Rule::in(['ADMIN', 'PROFISSIONAL'])],
+            'ativo' => ['nullable', 'boolean'],
+            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $ativo = (bool) ($data['ativo'] ?? true);
+
+        // Password temporária se não vier no form
+        $tempPassword = $data['password'] ?? ('Ango@' . random_int(100000, 999999));
+
+        $user = User::create([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'papel' => $data['papel'],
+            'ativo' => $ativo,
+            'password' => Hash::make($tempPassword),
+        ]);
+
+        Auditoria::create([
+            'user_id' => $request->user()->id,
+            'acao' => 'USER_CREATE',
+            'entidade' => 'User',
+            'entidade_id' => $user->id,
+            'antes' => null,
+            'depois' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'papel' => $user->papel,
+                'ativo' => (bool) $user->ativo,
+            ],
+            'ip' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 500),
+        ]);
+
+        return redirect()
+            ->route('users.index')
+            ->with('success', 'Utilizador criado com sucesso.')
+            ->with('temp_password', $tempPassword);
     }
 
     /**
