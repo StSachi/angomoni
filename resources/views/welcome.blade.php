@@ -22,9 +22,6 @@
 
                 <div class="leading-tight">
                     <div class="text-lg font-semibold">AngoMoni</div>
-                    <div class="text-xs text-slate-600">
-                        Monitorização de Doenças Endémicas
-                    </div>
                 </div>
             </div>
 

@@ -4,16 +4,26 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+/**
+ * Catálogo interno de doenças.
+ */
+return new class extends Migration {
     public function up(): void
     {
         Schema::create('doencas', function (Blueprint $table) {
             $table->id();
-            $table->string('nome')->unique();          // Ex: "Malária"
-            $table->string('codigo', 50)->nullable()->unique(); // Ex: "MAL-001"
+
+            $table->string('nome', 150)->unique();
             $table->text('descricao')->nullable();
-            $table->boolean('ativa')->default(true);
+
+            // Ativo/inativo
+            $table->boolean('ativo')->default(true);
+
+            // Quem criou
+            $table->foreignId('criado_por')
+                  ->nullable()
+                  ->constrained('users');
+
             $table->timestamps();
         });
     }

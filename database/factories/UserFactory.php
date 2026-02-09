@@ -2,24 +2,24 @@
 
 namespace Database\Factories;
 
+use App\Models\UnidadeSaude;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\User>
+ * Factory para criação de utilizadores em testes.
+ * Alinhada com o modelo RBAC do sistema.
  */
 class UserFactory extends Factory
 {
     /**
-     * The current password being used by the factory.
+     * Password padrão reutilizada
      */
     protected static ?string $password;
 
     /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
+     * Estado base do utilizador
      */
     public function definition(): array
     {
@@ -27,17 +27,59 @@ class UserFactory extends Factory
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
+
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+
+            // RBAC
+            'role' => 'REGISTADOR',
+            'ativo' => true,
+
+            // Por padrão não associamos a unidade
+            // (pode ser definido em states específicos)
+            'unidade_saude_id' => null,
+            'criado_por' => null,
         ];
     }
 
     /**
-     * Indicate that the model's email address should be unverified.
+     * Utilizador ADMIN
+     */
+    public function admin(): static
+    {
+        return $this->state(fn () => [
+            'role' => 'ADMIN',
+            'unidade_saude_id' => null,
+        ]);
+    }
+
+    /**
+     * Técnico de unidade hospitalar
+     */
+    public function tecnico(UnidadeSaude $unidade = null): static
+    {
+        return $this->state(fn () => [
+            'role' => 'TECNICO_UNIDADE',
+            'unidade_saude_id' => $unidade?->id ?? UnidadeSaude::factory(),
+        ]);
+    }
+
+    /**
+     * Utilizador inativo
+     */
+    public function inativo(): static
+    {
+        return $this->state(fn () => [
+            'ativo' => false,
+        ]);
+    }
+
+    /**
+     * Email não verificado
      */
     public function unverified(): static
     {
-        return $this->state(fn (array $attributes) => [
+        return $this->state(fn () => [
             'email_verified_at' => null,
         ]);
     }

@@ -14,22 +14,29 @@ use App\Http\Controllers\DashboardController;
 use App\Models\Caso;
 use App\Models\Doenca;
 use App\Models\UnidadeSaude;
-use App\Models\AuditoriaAcesso;
+use App\Models\Auditoria; // ✅ Ajuste: usar Auditoria (tabela auditorias)
 
+/**
+ * Página inicial
+ * - Se estiver autenticado: vai para dashboard
+ * - Se não: mostra dados públicos agregados (sem dados pessoais)
+ */
 Route::get('/', function () {
     if (Auth::check()) {
         return redirect()->route('dashboard');
     }
 
-    // ✅ Dados públicos (agregados, sem PII) + cache 60s
+    // Dados públicos agregados + cache por 60s
     $publicData = Cache::remember('welcome_public_data', 60, function () {
         return [
             'casos_total' => Caso::count(),
             'casos_7d' => Caso::where('created_at', '>=', now()->subDays(7))->count(),
             'doencas_total' => Doenca::count(),
             'unidades_total' => UnidadeSaude::count(),
+
+            // Última atualização baseada em auditoria (se existir)
             'ultima_atualizacao' => optional(
-                AuditoriaAcesso::orderByDesc('id')->first()
+                Auditoria::orderByDesc('id')->first()
             )->created_at,
         ];
     });
@@ -46,15 +53,45 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    // ✅ PROFISSIONAL (e ADMIN) - CASOS (CRUD completo)
-    Route::resource('casos', CasoController::class);
+    /**
+     * CASOS (workflow)
+     * - REGISTADOR: cria/edita apenas RASCUNHO + submete
+     * - TECNICO_UNIDADE: valida/rejeita casos da sua unidade
+     * - ADMIN: pode tudo
+     *
+     * Nota: o controlo final deve ser aplicado também via Policy no CasoController.
+     */
 
-    // ✅ ADMIN - cadastros base + gestão de utilizadores
+    // CRUD base (sem destroy aqui)
+    Route::resource('casos', CasoController::class)->except(['destroy']);
+
+    // Delete: só ADMIN
+    Route::delete('/casos/{caso}', [CasoController::class, 'destroy'])
+        ->middleware('role:ADMIN')
+        ->name('casos.destroy');
+
+    // Submeter: REGISTADOR e ADMIN
+    Route::post('/casos/{caso}/submit', [CasoController::class, 'submit'])
+        ->middleware('role:REGISTADOR,ADMIN')
+        ->name('casos.submit');
+
+    // Validar/Rejeitar: TECNICO_UNIDADE e ADMIN
+    Route::post('/casos/{caso}/validate', [CasoController::class, 'validateCase'])
+        ->middleware('role:TECNICO_UNIDADE,ADMIN')
+        ->name('casos.validate');
+
+    Route::post('/casos/{caso}/reject', [CasoController::class, 'rejectCase'])
+        ->middleware('role:TECNICO_UNIDADE,ADMIN')
+        ->name('casos.reject');
+
+    /**
+     * ADMIN: cadastros base + gestão de utilizadores
+     */
     Route::middleware(['role:ADMIN'])->group(function () {
         Route::resource('doencas', DoencaController::class);
         Route::resource('unidades-saude', UnidadeSaudeController::class);
 
-        // lista + eliminar (com policy)
+        // Gestão de utilizadores (mínimo)
         Route::resource('users', UserController::class)->only(['index', 'create', 'store', 'destroy']);
     });
 });
