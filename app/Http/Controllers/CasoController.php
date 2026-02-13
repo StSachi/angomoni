@@ -4,64 +4,158 @@ namespace App\Http\Controllers;
 
 use App\Models\Caso;
 use App\Models\Doenca;
+use App\Models\Paciente;
 use App\Models\UnidadeSaude;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class CasoController extends Controller
 {
-    public function index()
+    public function __construct()
     {
-        $this->authorize('viewAny', Caso::class);
+        $this->middleware('auth');
 
-        $casos = Caso::with(['doenca', 'unidadeSaude', 'user'])
-            ->orderByDesc('data_notificacao')
-            ->orderByDesc('id')
-            ->paginate(10);
-
-        return view('casos.index', compact('casos'));
+        // CRUD protegido pela Policy (viewAny/view/create/update/delete...)
+        $this->authorizeResource(Caso::class, 'caso');
     }
 
+    /**
+     * LISTAGEM
+     * - ADMIN: vê tudo (com filtros opcionais)
+     * - REGISTADOR: vê apenas casos registados na sua unidade_registo_id
+     */
+    public function index(Request $request)
+    {
+        $user  = Auth::user();
+        $papel = $user->papel ?? null;
+
+        $q = Caso::query()
+            ->with(['doenca', 'paciente', 'unidadeRegisto', 'unidadeOrigem', 'utilizador'])
+            ->orderByDesc('id');
+
+        if ($papel === 'REGISTADOR') {
+            if (! $user->unidade_saude_id) {
+                return redirect()->route('dashboard')->withErrors([
+                    'unidade' => 'A sua conta não está associada a nenhuma unidade de saúde. Contacte o administrador.',
+                ]);
+            }
+            $q->where('unidade_registo_id', $user->unidade_saude_id);
+        } else {
+            // Filtros para ADMIN/TECNICO_UNIDADE (opcional)
+            if ($request->filled('unidade_registo_id')) {
+                $q->where('unidade_registo_id', $request->integer('unidade_registo_id'));
+            }
+            if ($request->filled('unidade_origem_id')) {
+                $q->where('unidade_origem_id', $request->integer('unidade_origem_id'));
+            }
+        }
+
+        // Filtros comuns
+        if ($request->filled('doenca_id')) {
+            $q->where('doenca_id', $request->integer('doenca_id'));
+        }
+        if ($request->filled('paciente_id')) {
+            $q->where('paciente_id', $request->integer('paciente_id'));
+        }
+        if ($request->filled('estado')) {
+            $q->where('estado', $request->input('estado'));
+        }
+
+        $casos = $q->paginate(15)->withQueryString();
+
+        $doencas   = Doenca::orderBy('nome')->get();
+        $pacientes = Paciente::orderBy('nome')->get();
+
+        // Para filtros UI
+        $unidades = ($papel === 'ADMIN')
+            ? UnidadeSaude::orderBy('nome')->get()
+            : UnidadeSaude::where('id', $user->unidade_saude_id)->get();
+
+        return view('casos.index', compact('casos', 'doencas', 'pacientes', 'unidades', 'papel'));
+    }
+
+    /**
+     * FORM CREATE
+     * - ADMIN: pode escolher unidade_registo_id e unidade_origem_id
+     * - REGISTADOR: unidade_registo_id fixa = user.unidade_saude_id (sem select)
+     */
     public function create()
     {
-        $this->authorize('create', Caso::class);
+        $user  = Auth::user();
+        $papel = $user->papel ?? null;
 
-        $doencas = Doenca::where('ativa', true)->orderBy('nome')->get();
-        $unidades = UnidadeSaude::orderBy('provincia')->orderBy('municipio')->orderBy('nome')->get();
+        if ($papel === 'REGISTADOR' && ! $user->unidade_saude_id) {
+            return redirect()->route('casos.index')->withErrors([
+                'unidade' => 'A sua conta não está associada a nenhuma unidade de saúde. Contacte o administrador.',
+            ]);
+        }
 
-        return view('casos.create', compact('doencas', 'unidades'));
+        $doencas   = Doenca::orderBy('nome')->get();
+        $pacientes = Paciente::orderBy('nome')->get();
+
+        $unidades = ($papel === 'ADMIN')
+            ? UnidadeSaude::orderBy('nome')->get()
+            : UnidadeSaude::where('id', $user->unidade_saude_id)->get();
+
+        return view('casos.create', compact('doencas', 'pacientes', 'unidades', 'papel'));
     }
 
+    /**
+     * STORE
+     * Regras:
+     * - user_id é sempre o utilizador autenticado
+     * - REGISTADOR: unidade_registo_id é sempre a unidade do user
+     * - ADMIN: pode definir unidade_registo_id e unidade_origem_id
+     * - REGISTADOR: unidade_origem_id por padrão = unidade_registo_id
+     */
     public function store(Request $request)
     {
-        $this->authorize('create', Caso::class);
+        $user  = Auth::user();
+        $papel = $user->papel ?? null;
 
-        $data = $request->validate([
-            'doenca_id' => ['required', 'exists:doencas,id'],
-            'unidade_saude_id' => ['required', 'exists:unidades_saude,id'],
-            'data_notificacao' => ['required', 'date'],
-            'idade' => ['nullable', 'integer', 'min:0', 'max:120'],
-            'sexo' => ['required', 'in:M,F,N'],
-            'estado' => ['required', 'in:SUSPEITO,CONFIRMADO,DESCARTADO,OBITO'],
-            'paciente_iniciais' => ['nullable', 'string', 'max:10'],
-            'telefone_contacto' => ['nullable', 'string', 'max:30'],
-            'observacoes' => ['nullable', 'string'],
-        ]);
+        $rules = [
+            'paciente_id' => ['required', 'integer', 'exists:pacientes,id'],
+            'doenca_id'   => ['required', 'integer', 'exists:doencas,id'],
 
-        $data['user_id'] = $request->user()->id;
+            'data_notificacao'     => ['required', 'date'],
+            'data_inicio_sintomas' => ['nullable', 'date', 'before_or_equal:data_notificacao'],
 
-        // ✅ Snapshot de localização (não vem do utilizador)
-        $unidade = UnidadeSaude::findOrFail($data['unidade_saude_id']);
+            'classificacao_caso'   => ['nullable', 'string', 'max:100'],
+            'tipo_deteccao'        => ['nullable', 'string', 'max:100'],
+            'fonte_notificacao'    => ['nullable', 'string', 'max:100'],
 
-        // Aqui usamos municipio como “cidade” do caso
-        $data['provincia'] = $unidade->provincia;
-        $data['cidade'] = $unidade->municipio;
+            'estado'               => ['required', 'string', 'max:50'],
+            'parecer_tecnico'      => ['nullable', 'string', 'max:2000'],
+        ];
 
-        // (Recomendado) Bloquear caso a unidade não tenha localização
-        if (empty($data['provincia']) || empty($data['cidade'])) {
-            return back()
-                ->withErrors(['unidade_saude_id' => 'A unidade selecionada não tem província/município definido.'])
-                ->withInput();
+        if ($papel === 'ADMIN') {
+            $rules['unidade_registo_id'] = ['required', 'integer', 'exists:unidades_saude,id'];
+            $rules['unidade_origem_id']  = ['nullable', 'integer', 'exists:unidades_saude,id'];
         }
+
+        $data = $request->validate($rules);
+
+        // Controlado pelo sistema
+        $data['user_id'] = $user->id;
+
+        if ($papel === 'REGISTADOR') {
+            if (! $user->unidade_saude_id) {
+                return back()->withErrors([
+                    'unidade' => 'A sua conta não está associada a nenhuma unidade de saúde. Contacte o administrador.',
+                ])->withInput();
+            }
+
+            $data['unidade_registo_id'] = $user->unidade_saude_id;
+            $data['unidade_origem_id']  = $user->unidade_saude_id;
+        } else {
+            // ADMIN: se não informar origem, assume origem = registo
+            if (empty($data['unidade_origem_id'])) {
+                $data['unidade_origem_id'] = $data['unidade_registo_id'];
+            }
+        }
+
+        // Workflow: ao criar, pode marcar submetido_em (conforme teu fluxo atual)
+        $data['submetido_em'] = now();
 
         $caso = Caso::create($data);
 
@@ -72,48 +166,69 @@ class CasoController extends Controller
 
     public function show(Caso $caso)
     {
-        $this->authorize('view', $caso);
-
-        $caso->load(['doenca', 'unidadeSaude', 'user']);
+        $caso->load(['doenca', 'paciente', 'unidadeRegisto', 'unidadeOrigem', 'utilizador', 'validador']);
         return view('casos.show', compact('caso'));
     }
 
     public function edit(Caso $caso)
     {
-        $this->authorize('update', $caso);
+        $user  = Auth::user();
+        $papel = $user->papel ?? null;
 
-        $doencas = Doenca::where('ativa', true)->orderBy('nome')->get();
-        $unidades = UnidadeSaude::orderBy('provincia')->orderBy('municipio')->orderBy('nome')->get();
+        $doencas   = Doenca::orderBy('nome')->get();
+        $pacientes = Paciente::orderBy('nome')->get();
 
-        return view('casos.edit', compact('caso', 'doencas', 'unidades'));
+        $unidades = ($papel === 'ADMIN')
+            ? UnidadeSaude::orderBy('nome')->get()
+            : UnidadeSaude::where('id', $user->unidade_saude_id)->get();
+
+        return view('casos.edit', compact('caso', 'doencas', 'pacientes', 'unidades', 'papel'));
     }
 
+    /**
+     * UPDATE
+     * - REGISTADOR não troca unidade_registo_id nem unidade_origem_id (fica travado na unidade dele)
+     * - ADMIN pode trocar
+     */
     public function update(Request $request, Caso $caso)
     {
-        $this->authorize('update', $caso);
+        $user  = Auth::user();
+        $papel = $user->papel ?? null;
 
-        $data = $request->validate([
-            'doenca_id' => ['required', 'exists:doencas,id'],
-            'unidade_saude_id' => ['required', 'exists:unidades_saude,id'],
-            'data_notificacao' => ['required', 'date'],
-            'idade' => ['nullable', 'integer', 'min:0', 'max:120'],
-            'sexo' => ['required', 'in:M,F,N'],
-            'estado' => ['required', 'in:SUSPEITO,CONFIRMADO,DESCARTADO,OBITO'],
-            'paciente_iniciais' => ['nullable', 'string', 'max:10'],
-            'telefone_contacto' => ['nullable', 'string', 'max:30'],
-            'observacoes' => ['nullable', 'string'],
-        ]);
+        $rules = [
+            'paciente_id' => ['required', 'integer', 'exists:pacientes,id'],
+            'doenca_id'   => ['required', 'integer', 'exists:doencas,id'],
 
-        // ✅ Se a unidade mudou, atualizar snapshot
-        if ((int)$caso->unidade_saude_id !== (int)$data['unidade_saude_id']) {
-            $unidade = UnidadeSaude::findOrFail($data['unidade_saude_id']);
-            $data['provincia'] = $unidade->provincia;
-            $data['cidade'] = $unidade->municipio;
+            'data_notificacao'     => ['required', 'date'],
+            'data_inicio_sintomas' => ['nullable', 'date', 'before_or_equal:data_notificacao'],
 
-            if (empty($data['provincia']) || empty($data['cidade'])) {
-                return back()
-                    ->withErrors(['unidade_saude_id' => 'A unidade selecionada não tem província/município definido.'])
-                    ->withInput();
+            'classificacao_caso'   => ['nullable', 'string', 'max:100'],
+            'tipo_deteccao'        => ['nullable', 'string', 'max:100'],
+            'fonte_notificacao'    => ['nullable', 'string', 'max:100'],
+
+            'estado'               => ['required', 'string', 'max:50'],
+            'parecer_tecnico'      => ['nullable', 'string', 'max:2000'],
+        ];
+
+        if ($papel === 'ADMIN') {
+            $rules['unidade_registo_id'] = ['required', 'integer', 'exists:unidades_saude,id'];
+            $rules['unidade_origem_id']  = ['nullable', 'integer', 'exists:unidades_saude,id'];
+        }
+
+        $data = $request->validate($rules);
+
+        if ($papel === 'REGISTADOR') {
+            if (! $user->unidade_saude_id) {
+                return back()->withErrors([
+                    'unidade' => 'A sua conta não está associada a nenhuma unidade de saúde. Contacte o administrador.',
+                ])->withInput();
+            }
+
+            $data['unidade_registo_id'] = $user->unidade_saude_id;
+            $data['unidade_origem_id']  = $user->unidade_saude_id;
+        } else {
+            if (empty($data['unidade_origem_id'])) {
+                $data['unidade_origem_id'] = $data['unidade_registo_id'];
             }
         }
 
@@ -126,12 +241,110 @@ class CasoController extends Controller
 
     public function destroy(Caso $caso)
     {
-        $this->authorize('delete', $caso);
-
         $caso->delete();
 
         return redirect()
             ->route('casos.index')
-            ->with('success', 'Caso eliminado com sucesso.');
+            ->with('success', 'Caso removido com sucesso.');
+    }
+
+    /**
+     * WORKFLOW: Submeter caso (REGISTADOR da própria unidade ou ADMIN)
+     */
+    public function submit(Caso $caso)
+    {
+        $this->authorize('submit', $caso);
+
+        if ($caso->submetido_em) {
+            return back()->withErrors([
+                'workflow' => 'Este caso já foi submetido.',
+            ]);
+        }
+
+        $caso->submetido_em = now();
+
+        if (! $caso->estado) {
+            $caso->estado = 'SUBMETIDO';
+        }
+
+        $caso->save();
+
+        return redirect()
+            ->route('casos.show', $caso)
+            ->with('success', 'Caso submetido com sucesso.');
+    }
+
+    /**
+     * WORKFLOW: Validar caso (TECNICO_UNIDADE e ADMIN)
+     */
+    public function validateCase(Request $request, Caso $caso)
+    {
+        $this->authorize('validate', $caso);
+
+        if (! $caso->submetido_em) {
+            return back()->withErrors([
+                'workflow' => 'Não é possível validar um caso que ainda não foi submetido.',
+            ]);
+        }
+
+        if ($caso->validado_em) {
+            return back()->withErrors([
+                'workflow' => 'Este caso já foi validado.',
+            ]);
+        }
+
+        $data = $request->validate([
+            'parecer_tecnico' => ['nullable', 'string', 'max:2000'],
+            'estado'          => ['nullable', 'string', 'max:50'],
+        ]);
+
+        if (array_key_exists('parecer_tecnico', $data)) {
+            $caso->parecer_tecnico = $data['parecer_tecnico'];
+        }
+
+        $caso->estado = $data['estado'] ?? ($caso->estado ?: 'VALIDADO');
+
+        $caso->validado_por = Auth::id();
+        $caso->validado_em  = now();
+
+        $caso->save();
+
+        return redirect()
+            ->route('casos.show', $caso)
+            ->with('success', 'Caso validado com sucesso.');
+    }
+
+    /**
+     * WORKFLOW: Rejeitar caso (TECNICO_UNIDADE e ADMIN)
+     */
+    public function rejectCase(Request $request, Caso $caso)
+    {
+        $this->authorize('reject', $caso);
+
+        if (! $caso->submetido_em) {
+            return back()->withErrors([
+                'workflow' => 'Não é possível rejeitar um caso que ainda não foi submetido.',
+            ]);
+        }
+
+        $data = $request->validate([
+            'parecer_tecnico' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        if (array_key_exists('parecer_tecnico', $data)) {
+            $caso->parecer_tecnico = $data['parecer_tecnico'];
+        }
+
+        $caso->estado = 'REJEITADO';
+
+        // Rejeição não é validação: mantemos validado_* limpos
+        $caso->validado_por = null;
+        $caso->validado_em  = null;
+
+        $caso->save();
+
+        return redirect()
+            ->route('casos.show', $caso)
+            ->with('success', 'Caso rejeitado com sucesso.');
     }
 }

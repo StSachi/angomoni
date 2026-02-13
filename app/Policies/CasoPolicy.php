@@ -7,70 +7,71 @@ use App\Models\User;
 
 class CasoPolicy
 {
+    public function viewAny(User $user): bool
+    {
+        return (bool) $user->ativo;
+    }
+
     public function view(User $user, Caso $caso): bool
     {
-        if ($user->role === 'ADMIN') return true;
+        if (! (bool) $user->ativo) return false;
 
-        // Técnico vê casos da sua unidade
-        if ($user->role === 'TECNICO_UNIDADE') {
-            return $user->unidade_saude_id === $caso->unidade_registo_id;
-        }
+        if (($user->papel ?? null) === 'ADMIN') return true;
 
-        // Registador vê os próprios
-        return $user->id === $caso->user_id;
+        // REGISTADOR/TECNICO_UNIDADE: só casos da própria unidade
+        return $user->unidade_saude_id !== null
+            && (int) $user->unidade_saude_id === (int) $caso->unidade_registo_id;
     }
 
     public function create(User $user): bool
     {
-        // Admin, técnico e registador podem criar (se quiseres, podes limitar)
-        return in_array($user->role, ['ADMIN','TECNICO_UNIDADE','REGISTADOR'], true);
+        if (! (bool) $user->ativo) return false;
+
+        if (($user->papel ?? null) === 'ADMIN') return true;
+
+        return in_array(($user->papel ?? null), ['REGISTADOR'], true)
+            && $user->unidade_saude_id !== null;
     }
 
     public function update(User $user, Caso $caso): bool
     {
-        // Só admin edita (regra que definiste)
-        if ($user->role === 'ADMIN') return true;
+        if (! (bool) $user->ativo) return false;
 
-        // Registador pode editar apenas se for rascunho e autor
-        if ($user->role === 'REGISTADOR') {
-            return $caso->estado === 'RASCUNHO' && $caso->user_id === $user->id;
-        }
+        if (($user->papel ?? null) === 'ADMIN') return true;
 
-        // Técnico não edita dados do caso
-        return false;
+        // REGISTADOR só edita casos da própria unidade
+        return (($user->papel ?? null) === 'REGISTADOR')
+            && $user->unidade_saude_id !== null
+            && (int) $user->unidade_saude_id === (int) $caso->unidade_registo_id;
     }
 
     public function delete(User $user, Caso $caso): bool
     {
-        // Só admin deleta
-        return $user->role === 'ADMIN';
+        return (bool) $user->ativo && (($user->papel ?? null) === 'ADMIN');
     }
 
     public function submit(User $user, Caso $caso): bool
     {
-        // Registador submete apenas o próprio rascunho
-        if ($user->role === 'REGISTADOR') {
-            return $caso->estado === 'RASCUNHO' && $caso->user_id === $user->id;
-        }
+        if (! (bool) $user->ativo) return false;
 
-        // Admin também pode
-        return $user->role === 'ADMIN';
+        if (($user->papel ?? null) === 'ADMIN') return true;
+
+        return (($user->papel ?? null) === 'REGISTADOR')
+            && $user->unidade_saude_id !== null
+            && (int) $user->unidade_saude_id === (int) $caso->unidade_registo_id;
     }
 
-    public function validateCase(User $user, Caso $caso): bool
+    public function validate(User $user, Caso $caso): bool
     {
-        // Técnico valida casos da sua unidade que estejam submetidos
-        if ($user->role === 'TECNICO_UNIDADE') {
-            return $caso->estado === 'SUBMETIDO'
-                && $user->unidade_saude_id === $caso->unidade_registo_id;
-        }
+        if (! (bool) $user->ativo) return false;
 
-        return $user->role === 'ADMIN';
+        return in_array(($user->papel ?? null), ['TECNICO_UNIDADE', 'ADMIN'], true);
     }
 
-    public function rejectCase(User $user, Caso $caso): bool
+    public function reject(User $user, Caso $caso): bool
     {
-        // Mesma regra da validação
-        return $this->validateCase($user, $caso);
+        if (! (bool) $user->ativo) return false;
+
+        return in_array(($user->papel ?? null), ['TECNICO_UNIDADE', 'ADMIN'], true);
     }
 }

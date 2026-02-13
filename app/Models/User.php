@@ -6,14 +6,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
     /**
-     * The attributes that are mass assignable.
+     * Mass assignment
      *
      * @var list<string>
      */
@@ -23,10 +23,11 @@ class User extends Authenticatable
         'password',
         'papel',
         'ativo',
+        'unidade_saude_id',
     ];
 
     /**
-     * The attributes that should be hidden for serialization.
+     * Hidden
      *
      * @var list<string>
      */
@@ -36,7 +37,7 @@ class User extends Authenticatable
     ];
 
     /**
-     * Get the attributes that should be cast.
+     * Casts
      *
      * @return array<string, string>
      */
@@ -45,6 +46,30 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'ativo' => 'boolean',
+            'unidade_saude_id' => 'integer',
         ];
+    }
+
+    /**
+     * Unidade de Saúde associada ao utilizador (profissional).
+     * Serve para impor a regra institucional: profissional só regista caso na sua unidade.
+     */
+    public function unidadeSaude(): BelongsTo
+    {
+        return $this->belongsTo(UnidadeSaude::class, 'unidade_saude_id');
+    }
+
+    /**
+     * Helpers de papel (opcional, mas ajuda a manter o código limpo)
+     */
+    public function isAdmin(): bool
+    {
+        return ($this->papel ?? null) === 'ADMIN';
+    }
+
+    public function isProfissional(): bool
+    {
+        return ($this->papel ?? null) === 'PROFISSIONAL';
     }
 }

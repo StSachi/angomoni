@@ -9,14 +9,14 @@ use Illuminate\Support\Facades\Schema;
  * Isso permite aplicar a regra: profissional só regista caso na sua unidade.
  * Não altera tipos/papéis (RBAC), apenas adiciona a referência.
  */
-return new class extends Migration {
+return new class extends Migration
+{
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            if (!Schema::hasColumn('users', 'unidade_saude_id')) {
+            if (! Schema::hasColumn('users', 'unidade_saude_id')) {
                 $table->foreignId('unidade_saude_id')
                     ->nullable()
-                    ->after('id')
                     ->constrained('unidades_saude')
                     ->nullOnDelete();
             }
