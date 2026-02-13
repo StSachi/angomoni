@@ -2,19 +2,18 @@
 
 namespace Database\Seeders;
 
-use App\Models\UnidadeSaude;
 use Illuminate\Database\Seeder;
 
-class UnidadesSaudeSeeder extends Seeder
+class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        UnidadeSaude::firstOrCreate([
-            'nome' => 'Hospital Geral Central',
-            'provincia_id' => 1,
-            'municipio_id' => 1,
-            'tipo' => 'HOSPITAL',
-            'ativo' => true,
+        $this->call([
+            ProvinciasSeeder::class,
+            MunicipiosSeeder::class,
+            UnidadesSaudeSeeder::class,
+            AdminSeeder::class,
         ]);
+
     }
 }
