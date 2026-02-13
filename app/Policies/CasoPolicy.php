@@ -14,64 +14,101 @@ class CasoPolicy
 
     public function view(User $user, Caso $caso): bool
     {
-        if (! (bool) $user->ativo) return false;
+        if (! $user->ativo) {
+            return false;
+        }
 
-        if (($user->papel ?? null) === 'ADMIN') return true;
+        if ($user->papel === 'ADMIN') {
+            return true;
+        }
 
-        // REGISTADOR/TECNICO_UNIDADE: só casos da própria unidade
-        return $user->unidade_saude_id !== null
-            && (int) $user->unidade_saude_id === (int) $caso->unidade_registo_id;
+        // REGISTADOR e TECNICO_UNIDADE: só casos da sua unidade
+        return !is_null($user->unidade_saude_id)
+            && $user->unidade_saude_id === $caso->unidade_registo_id;
     }
 
     public function create(User $user): bool
     {
-        if (! (bool) $user->ativo) return false;
+        if (! $user->ativo) {
+            return false;
+        }
 
-        if (($user->papel ?? null) === 'ADMIN') return true;
+        if ($user->papel === 'ADMIN') {
+            return true;
+        }
 
-        return in_array(($user->papel ?? null), ['REGISTADOR'], true)
-            && $user->unidade_saude_id !== null;
+        return $user->papel === 'REGISTADOR'
+            && !is_null($user->unidade_saude_id);
     }
 
     public function update(User $user, Caso $caso): bool
     {
-        if (! (bool) $user->ativo) return false;
+        if (! $user->ativo) {
+            return false;
+        }
 
-        if (($user->papel ?? null) === 'ADMIN') return true;
+        if ($user->papel === 'ADMIN') {
+            return true;
+        }
 
-        // REGISTADOR só edita casos da própria unidade
-        return (($user->papel ?? null) === 'REGISTADOR')
-            && $user->unidade_saude_id !== null
-            && (int) $user->unidade_saude_id === (int) $caso->unidade_registo_id;
+        return $user->papel === 'REGISTADOR'
+            && !is_null($user->unidade_saude_id)
+            && $user->unidade_saude_id === $caso->unidade_registo_id;
     }
 
     public function delete(User $user, Caso $caso): bool
     {
-        return (bool) $user->ativo && (($user->papel ?? null) === 'ADMIN');
+        if (! $user->ativo) {
+            return false;
+        }
+
+        return $user->papel === 'ADMIN';
     }
 
+    /**
+     * WORKFLOW: submeter
+     * REGISTADOR da própria unidade ou ADMIN
+     */
     public function submit(User $user, Caso $caso): bool
     {
-        if (! (bool) $user->ativo) return false;
+        if (! $user->ativo) {
+            return false;
+        }
 
-        if (($user->papel ?? null) === 'ADMIN') return true;
+        if ($user->papel === 'ADMIN') {
+            return true;
+        }
 
-        return (($user->papel ?? null) === 'REGISTADOR')
-            && $user->unidade_saude_id !== null
-            && (int) $user->unidade_saude_id === (int) $caso->unidade_registo_id;
+        return $user->papel === 'REGISTADOR'
+            && !is_null($user->unidade_saude_id)
+            && $user->unidade_saude_id === $caso->unidade_registo_id;
     }
 
+    /**
+     * WORKFLOW: validar
+     * TECNICO_UNIDADE da própria unidade ou ADMIN
+     */
     public function validate(User $user, Caso $caso): bool
     {
-        if (! (bool) $user->ativo) return false;
+        if (! $user->ativo) {
+            return false;
+        }
 
-        return in_array(($user->papel ?? null), ['TECNICO_UNIDADE', 'ADMIN'], true);
+        if ($user->papel === 'ADMIN') {
+            return true;
+        }
+
+        return $user->papel === 'TECNICO_UNIDADE'
+            && !is_null($user->unidade_saude_id)
+            && $user->unidade_saude_id === $caso->unidade_registo_id;
     }
 
+    /**
+     * WORKFLOW: rejeitar
+     * Mesma regra do validate
+     */
     public function reject(User $user, Caso $caso): bool
     {
-        if (! (bool) $user->ativo) return false;
-
-        return in_array(($user->papel ?? null), ['TECNICO_UNIDADE', 'ADMIN'], true);
+        return $this->validate($user, $caso);
     }
 }

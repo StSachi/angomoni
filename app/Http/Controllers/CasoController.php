@@ -6,6 +6,7 @@ use App\Models\Caso;
 use App\Models\Doenca;
 use App\Models\Paciente;
 use App\Models\UnidadeSaude;
+use App\Services\ServicoAuditoria;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -22,7 +23,8 @@ class CasoController extends Controller
     /**
      * LISTAGEM
      * - ADMIN: vê tudo (com filtros opcionais)
-     * - REGISTADOR: vê apenas casos registados na sua unidade_registo_id
+     * - REGISTADOR: vê apenas casos da sua unidade_registo_id
+     * - TECNICO_UNIDADE: pode ver casos (depende da Policy; aqui não bloqueamos)
      */
     public function index(Request $request)
     {
@@ -30,9 +32,10 @@ class CasoController extends Controller
         $papel = $user->papel ?? null;
 
         $q = Caso::query()
-            ->with(['doenca', 'paciente', 'unidadeRegisto', 'unidadeOrigem', 'utilizador'])
+            ->with(['doenca', 'paciente', 'unidadeRegisto', 'unidadeOrigem', 'utilizador', 'validador'])
             ->orderByDesc('id');
 
+        // REGISTADOR fica limitado à sua unidade
         if ($papel === 'REGISTADOR') {
             if (! $user->unidade_saude_id) {
                 return redirect()->route('dashboard')->withErrors([
@@ -41,7 +44,7 @@ class CasoController extends Controller
             }
             $q->where('unidade_registo_id', $user->unidade_saude_id);
         } else {
-            // Filtros para ADMIN/TECNICO_UNIDADE (opcional)
+            // filtros opcionais para ADMIN/TECNICO_UNIDADE
             if ($request->filled('unidade_registo_id')) {
                 $q->where('unidade_registo_id', $request->integer('unidade_registo_id'));
             }
@@ -50,7 +53,7 @@ class CasoController extends Controller
             }
         }
 
-        // Filtros comuns
+        // filtros comuns
         if ($request->filled('doenca_id')) {
             $q->where('doenca_id', $request->integer('doenca_id'));
         }
@@ -66,10 +69,10 @@ class CasoController extends Controller
         $doencas   = Doenca::orderBy('nome')->get();
         $pacientes = Paciente::orderBy('nome')->get();
 
-        // Para filtros UI
+        // Para filtros no UI (ADMIN vê todas; outros veem apenas a sua unidade)
         $unidades = ($papel === 'ADMIN')
             ? UnidadeSaude::orderBy('nome')->get()
-            : UnidadeSaude::where('id', $user->unidade_saude_id)->get();
+            : UnidadeSaude::where('id', $user->unidade_saude_id)->orderBy('nome')->get();
 
         return view('casos.index', compact('casos', 'doencas', 'pacientes', 'unidades', 'papel'));
     }
@@ -77,7 +80,7 @@ class CasoController extends Controller
     /**
      * FORM CREATE
      * - ADMIN: pode escolher unidade_registo_id e unidade_origem_id
-     * - REGISTADOR: unidade_registo_id fixa = user.unidade_saude_id (sem select)
+     * - REGISTADOR: unidade_registo_id fixa = user.unidade_saude_id
      */
     public function create()
     {
@@ -95,7 +98,7 @@ class CasoController extends Controller
 
         $unidades = ($papel === 'ADMIN')
             ? UnidadeSaude::orderBy('nome')->get()
-            : UnidadeSaude::where('id', $user->unidade_saude_id)->get();
+            : UnidadeSaude::where('id', $user->unidade_saude_id)->orderBy('nome')->get();
 
         return view('casos.create', compact('doencas', 'pacientes', 'unidades', 'papel'));
     }
@@ -104,9 +107,8 @@ class CasoController extends Controller
      * STORE
      * Regras:
      * - user_id é sempre o utilizador autenticado
-     * - REGISTADOR: unidade_registo_id é sempre a unidade do user
+     * - REGISTADOR: unidade_registo_id e unidade_origem_id = unidade do user
      * - ADMIN: pode definir unidade_registo_id e unidade_origem_id
-     * - REGISTADOR: unidade_origem_id por padrão = unidade_registo_id
      */
     public function store(Request $request)
     {
@@ -135,7 +137,6 @@ class CasoController extends Controller
 
         $data = $request->validate($rules);
 
-        // Controlado pelo sistema
         $data['user_id'] = $user->id;
 
         if ($papel === 'REGISTADOR') {
@@ -148,16 +149,17 @@ class CasoController extends Controller
             $data['unidade_registo_id'] = $user->unidade_saude_id;
             $data['unidade_origem_id']  = $user->unidade_saude_id;
         } else {
-            // ADMIN: se não informar origem, assume origem = registo
             if (empty($data['unidade_origem_id'])) {
                 $data['unidade_origem_id'] = $data['unidade_registo_id'];
             }
         }
 
-        // Workflow: ao criar, pode marcar submetido_em (conforme teu fluxo atual)
-        $data['submetido_em'] = now();
+        // Workflow: por padrão cria como SUBMETIDO já com timestamp (como você vinha fazendo)
+        $data['submetido_em'] = $data['submetido_em'] ?? now();
 
         $caso = Caso::create($data);
+
+        ServicoAuditoria::registar('CREATE_CASO', 'Caso #' . $caso->id . ' criado');
 
         return redirect()
             ->route('casos.show', $caso)
@@ -180,14 +182,14 @@ class CasoController extends Controller
 
         $unidades = ($papel === 'ADMIN')
             ? UnidadeSaude::orderBy('nome')->get()
-            : UnidadeSaude::where('id', $user->unidade_saude_id)->get();
+            : UnidadeSaude::where('id', $user->unidade_saude_id)->orderBy('nome')->get();
 
         return view('casos.edit', compact('caso', 'doencas', 'pacientes', 'unidades', 'papel'));
     }
 
     /**
      * UPDATE
-     * - REGISTADOR não troca unidade_registo_id nem unidade_origem_id (fica travado na unidade dele)
+     * - REGISTADOR não troca unidade_registo_id nem unidade_origem_id
      * - ADMIN pode trocar
      */
     public function update(Request $request, Caso $caso)
@@ -234,6 +236,8 @@ class CasoController extends Controller
 
         $caso->update($data);
 
+        ServicoAuditoria::registar('UPDATE_CASO', 'Caso #' . $caso->id . ' atualizado');
+
         return redirect()
             ->route('casos.show', $caso)
             ->with('success', 'Caso atualizado com sucesso.');
@@ -241,7 +245,11 @@ class CasoController extends Controller
 
     public function destroy(Caso $caso)
     {
+        $id = $caso->id;
+
         $caso->delete();
+
+        ServicoAuditoria::registar('DELETE_CASO', 'Caso #' . $id . ' removido');
 
         return redirect()
             ->route('casos.index')
@@ -249,7 +257,7 @@ class CasoController extends Controller
     }
 
     /**
-     * WORKFLOW: Submeter caso (REGISTADOR da própria unidade ou ADMIN)
+     * WORKFLOW: Submeter caso (REGISTADOR e ADMIN) - rota /casos/{caso}/submit
      */
     public function submit(Caso $caso)
     {
@@ -269,13 +277,15 @@ class CasoController extends Controller
 
         $caso->save();
 
+        ServicoAuditoria::registar('SUBMIT_CASO', 'Caso #' . $caso->id . ' submetido');
+
         return redirect()
             ->route('casos.show', $caso)
             ->with('success', 'Caso submetido com sucesso.');
     }
 
     /**
-     * WORKFLOW: Validar caso (TECNICO_UNIDADE e ADMIN)
+     * WORKFLOW: Validar caso (TECNICO_UNIDADE e ADMIN) - rota /casos/{caso}/validate
      */
     public function validateCase(Request $request, Caso $caso)
     {
@@ -309,13 +319,15 @@ class CasoController extends Controller
 
         $caso->save();
 
+        ServicoAuditoria::registar('VALIDATE_CASO', 'Caso #' . $caso->id . ' validado');
+
         return redirect()
             ->route('casos.show', $caso)
             ->with('success', 'Caso validado com sucesso.');
     }
 
     /**
-     * WORKFLOW: Rejeitar caso (TECNICO_UNIDADE e ADMIN)
+     * WORKFLOW: Rejeitar caso (TECNICO_UNIDADE e ADMIN) - rota /casos/{caso}/reject
      */
     public function rejectCase(Request $request, Caso $caso)
     {
@@ -336,12 +348,12 @@ class CasoController extends Controller
         }
 
         $caso->estado = 'REJEITADO';
-
-        // Rejeição não é validação: mantemos validado_* limpos
         $caso->validado_por = null;
         $caso->validado_em  = null;
 
         $caso->save();
+
+        ServicoAuditoria::registar('REJECT_CASO', 'Caso #' . $caso->id . ' rejeitado');
 
         return redirect()
             ->route('casos.show', $caso)
